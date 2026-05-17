@@ -92,9 +92,11 @@ Acceptance criteria:
 
 ### 3. Replace The VideoDB Stub
 
-`lib/videodb.ts` currently returns fixed demo moments even when `VIDEODB_API_KEY` is configured.
+Status: implemented.
 
-The next implementation should keep VideoDB-specific details inside `lib/videodb.ts` and return the project-owned `EvidenceMoment[]` type.
+`lib/videodb.ts` now uses the VideoDB Node SDK when `VIDEODB_API_KEY` is configured. Without a key, it still returns deterministic demo moments for local development.
+
+The implementation keeps VideoDB-specific details inside `lib/videodb.ts` and returns the project-owned `EvidenceMoment[]` type.
 
 Acceptance criteria:
 

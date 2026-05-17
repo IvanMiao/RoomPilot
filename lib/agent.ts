@@ -1,4 +1,10 @@
-import type { AgentTaskRequest, AgentTaskResult, RankedMoment, ReelClip } from "@/types/agent";
+import type {
+  AgentTaskRequest,
+  AgentTaskResult,
+  EvidenceMoment,
+  RankedMoment,
+  ReelClip,
+} from "@/types/agent";
 import { rankMomentsWithGemini } from "@/lib/gemini";
 import { retrieveEvidenceMoments } from "@/lib/videodb";
 
@@ -6,7 +12,7 @@ export async function runRoomPilotAgent(request: AgentTaskRequest): Promise<Agen
   const moments = await retrieveEvidenceMoments(request);
   const agentResponse = process.env.GEMINI_API_KEY
     ? await rankMomentsWithGemini(request.goal, moments)
-    : buildLocalAgentResponse();
+    : buildLocalAgentResponse(moments);
   const rankedMoments = moments.map((moment): RankedMoment => {
     const decision = agentResponse.decisions.find((candidate) => candidate.id === moment.id);
 
@@ -37,29 +43,17 @@ function buildReelPlan(moments: RankedMoment[]): ReelClip[] {
     }));
 }
 
-function buildLocalAgentResponse() {
+function buildLocalAgentResponse(moments: EvidenceMoment[]) {
+  const selectedMoments = moments.slice(0, 3);
+
   return {
     summary:
-      "Local demo mode selected the clearest moments with strong quote and screen evidence. Configure GEMINI_API_KEY to use Gemini ranking.",
-    decisions: [
-      {
-        id: "moment-quote-backed-next-move",
-        action: "use_in_demo" as const,
-        rationale: "This moment states the core product promise and shows the proof panel in context.",
-        kept: true,
-      },
-      {
-        id: "moment-action-queue",
-        action: "clip_for_pitch" as const,
-        rationale: "This moment turns the idea into a concrete post-demo artifact.",
-        kept: true,
-      },
-      {
-        id: "moment-memory-graph",
-        action: "compare_later" as const,
-        rationale: "This is useful context, but it is less direct than the main product proof.",
-        kept: true,
-      },
-    ],
+      "Local demo mode selected the highest-scoring retrieved moments. Configure GEMINI_API_KEY to use Gemini ranking.",
+    decisions: selectedMoments.map((moment, index) => ({
+      id: moment.id,
+      action: index === 1 ? ("clip_for_pitch" as const) : ("use_in_demo" as const),
+      rationale: "This retrieved moment has one of the strongest VideoDB relevance scores for the goal.",
+      kept: true,
+    })),
   };
 }

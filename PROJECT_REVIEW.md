@@ -62,19 +62,9 @@ Acceptance criteria:
 
 ### 2. Stabilize The Agent API Contract
 
-The current request is:
+Status: implemented.
 
-```ts
-interface AgentTaskRequest {
-  assetUrl: string;
-  goal: string;
-  mode: AgentMode;
-}
-```
-
-This is enough for a demo, but weak for extension. Prefer a task-shaped request that can grow without breaking the core endpoint.
-
-Suggested direction:
+The current request is now task-shaped and can grow without replacing the core endpoint.
 
 ```ts
 interface AgentTaskRequest {
@@ -293,4 +283,3 @@ RoomPilot should be considered MVP-ready when:
 - A reel plan can be generated from selected clips.
 - Typecheck and lint pass consistently.
 - Demo fallback still works without API keys.
-

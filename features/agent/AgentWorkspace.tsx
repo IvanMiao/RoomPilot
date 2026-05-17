@@ -21,7 +21,14 @@ export function AgentWorkspace() {
     setError(null);
 
     try {
-      const nextResult = await runAgentTask({ assetUrl, goal, mode });
+      const nextResult = await runAgentTask({
+        input: {
+          type: "video_url",
+          value: assetUrl,
+        },
+        goal,
+        mode,
+      });
       setResult(nextResult);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Agent task failed");

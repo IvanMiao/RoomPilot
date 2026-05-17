@@ -9,10 +9,25 @@ export type MomentSource = "audio" | "visual" | "multimodal";
 
 export type AgentMode = "answer" | "rank_moments" | "generate_reel" | "find_strongest_proof";
 
+export type AgentTaskInputType = "video_url" | "video_asset";
+
+export interface AgentTaskInput {
+  type: AgentTaskInputType;
+  value: string;
+}
+
+export interface AgentTaskOptions {
+  maxMoments?: number;
+  clipLengthSeconds?: number;
+  includeAudioEvidence?: boolean;
+  includeVisualEvidence?: boolean;
+}
+
 export interface AgentTaskRequest {
-  assetUrl: string;
+  input: AgentTaskInput;
   goal: string;
   mode: AgentMode;
+  options?: AgentTaskOptions;
 }
 
 export interface EvidenceMoment {

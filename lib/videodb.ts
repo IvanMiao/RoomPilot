@@ -4,10 +4,10 @@ export async function retrieveEvidenceMoments(
   request: AgentTaskRequest
 ): Promise<EvidenceMoment[]> {
   if (!process.env.VIDEODB_API_KEY) {
-    return getDemoMoments(request.assetUrl);
+    return getDemoMoments(request.input.value);
   }
 
-  return getDemoMoments(request.assetUrl);
+  return getDemoMoments(request.input.value);
 }
 
 function getDemoMoments(assetUrl: string): EvidenceMoment[] {

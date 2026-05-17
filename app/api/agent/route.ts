@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { runRoomPilotAgent } from "@/lib/agent";
-import type { AgentMode, AgentTaskRequest } from "@/types/agent";
+import type {
+  AgentMode,
+  AgentTaskInputType,
+  AgentTaskOptions,
+  AgentTaskRequest,
+} from "@/types/agent";
 
 const agentModes = new Set<AgentMode>([
   "answer",
@@ -8,6 +13,8 @@ const agentModes = new Set<AgentMode>([
   "generate_reel",
   "find_strongest_proof",
 ]);
+
+const inputTypes = new Set<AgentTaskInputType>(["video_url", "video_asset"]);
 
 export async function POST(request: Request) {
   const body: unknown = await request.json();
@@ -35,7 +42,15 @@ function parseAgentTaskRequest(value: unknown): AgentTaskRequest | null {
 
   const candidate = value as Partial<AgentTaskRequest>;
 
-  if (typeof candidate.assetUrl !== "string" || candidate.assetUrl.trim().length === 0) {
+  if (!candidate.input || typeof candidate.input !== "object") {
+    return null;
+  }
+
+  if (!inputTypes.has(candidate.input.type)) {
+    return null;
+  }
+
+  if (typeof candidate.input.value !== "string" || candidate.input.value.trim().length === 0) {
     return null;
   }
 
@@ -47,9 +62,70 @@ function parseAgentTaskRequest(value: unknown): AgentTaskRequest | null {
     return null;
   }
 
+  const options = parseAgentTaskOptions(candidate.options);
+
+  if (options === null) {
+    return null;
+  }
+
   return {
-    assetUrl: candidate.assetUrl.trim(),
+    input: {
+      type: candidate.input.type,
+      value: candidate.input.value.trim(),
+    },
     goal: candidate.goal.trim(),
     mode: candidate.mode,
+    ...(options ? { options } : {}),
   };
+}
+
+function parseAgentTaskOptions(value: unknown): AgentTaskOptions | null | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+
+  if (!value || typeof value !== "object") {
+    return null;
+  }
+
+  const candidate = value as Partial<AgentTaskOptions>;
+  const options: AgentTaskOptions = {};
+
+  if (candidate.maxMoments !== undefined) {
+    if (!isPositiveInteger(candidate.maxMoments)) {
+      return null;
+    }
+
+    options.maxMoments = candidate.maxMoments;
+  }
+
+  if (candidate.clipLengthSeconds !== undefined) {
+    if (!isPositiveInteger(candidate.clipLengthSeconds)) {
+      return null;
+    }
+
+    options.clipLengthSeconds = candidate.clipLengthSeconds;
+  }
+
+  if (candidate.includeAudioEvidence !== undefined) {
+    if (typeof candidate.includeAudioEvidence !== "boolean") {
+      return null;
+    }
+
+    options.includeAudioEvidence = candidate.includeAudioEvidence;
+  }
+
+  if (candidate.includeVisualEvidence !== undefined) {
+    if (typeof candidate.includeVisualEvidence !== "boolean") {
+      return null;
+    }
+
+    options.includeVisualEvidence = candidate.includeVisualEvidence;
+  }
+
+  return Object.keys(options).length > 0 ? options : undefined;
+}
+
+function isPositiveInteger(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value > 0;
 }

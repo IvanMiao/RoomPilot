@@ -6,7 +6,8 @@ import { runAgentTask } from "@/features/agent/agentApi";
 import type { AgentMode, AgentTaskResult, RankedMoment } from "@/types/agent";
 
 const demoVideoId = "m-z-019e3728-0d5b-78f2-a831-1c29e778cc59";
-const initialGoal = "Find the strongest proof moments for a 60-second product demo.";
+const initialGoal =
+  "Identify the clearest moments that show what RoomPilot does, who it helps, and why the evidence is convincing.";
 
 export function AgentWorkspace() {
   const [videoId, setVideoId] = useState(demoVideoId);

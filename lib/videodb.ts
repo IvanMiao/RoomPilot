@@ -192,7 +192,7 @@ async function ensureVisualIndexReady(video: Video): Promise<boolean> {
       "Describe product screens, user interface states, visible actions, and evidence that supports product demo goals.",
     batchConfig: {
       type: "shot",
-      value: 0.8,
+      value: 20,
       frameCount: 3,
       selectFrames: ["first", "middle", "last"],
     },

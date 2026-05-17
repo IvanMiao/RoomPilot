@@ -1,5 +1,5 @@
 import { GoogleGenAI } from "@google/genai";
-import type { AgentAction, EvidenceMoment, RankedMoment } from "@/types/agent";
+import type { AgentAction, AgentMode, EvidenceMoment, RankedMoment } from "@/types/agent";
 import { getOptionalEnv, getRequiredEnv } from "@/lib/env";
 
 interface GeminiMomentDecision {
@@ -57,6 +57,7 @@ const geminiAgentResponseSchema = {
 } as const;
 
 export async function rankMomentsWithGemini(
+  mode: AgentMode,
   goal: string,
   moments: EvidenceMoment[]
 ): Promise<GeminiAgentResponse> {
@@ -66,7 +67,7 @@ export async function rankMomentsWithGemini(
 
   const response = await ai.models.generateContent({
     model,
-    contents: buildRankingPrompt(goal, moments),
+    contents: buildRankingPrompt(mode, goal, moments),
     config: {
       responseMimeType: "application/json",
       responseJsonSchema: geminiAgentResponseSchema,
@@ -82,17 +83,55 @@ export async function rankMomentsWithGemini(
   return parseGeminiAgentResponse(text);
 }
 
-function buildRankingPrompt(goal: string, moments: EvidenceMoment[]): string {
+function buildRankingPrompt(mode: AgentMode, goal: string, moments: EvidenceMoment[]): string {
   return [
     "You are RoomPilot, an AI agent for narrated product demos.",
     "Rank evidence moments against the user goal.",
     "Keep only moments with strong evidence. Mark weak moments as kept=false.",
+    getModePrompt(mode),
     "Return strict JSON with this shape:",
     '{"summary":"string","decisions":[{"id":"string","action":"use_in_demo|save_as_proof|clip_for_pitch|compare_later|ignore","rationale":"string","kept":true}]}',
     "",
+    `Output mode: ${mode}`,
     `User goal: ${goal}`,
     "",
     `Candidate moments: ${JSON.stringify(moments)}`,
+  ].join("\n");
+}
+
+function getModePrompt(mode: AgentMode): string {
+  if (mode === "answer") {
+    return [
+      "Mode instructions:",
+      "- Write summary as a concise answer to the user goal.",
+      "- Keep only moments that directly support the answer.",
+      "- Use action=save_as_proof for supporting evidence and action=ignore for weak evidence.",
+    ].join("\n");
+  }
+
+  if (mode === "rank_moments") {
+    return [
+      "Mode instructions:",
+      "- Order decisions from strongest to weakest evidence.",
+      "- Keep useful moments and give a clear selection rationale for each one.",
+      "- Use action=compare_later when a moment is relevant but not strong enough for immediate use.",
+    ].join("\n");
+  }
+
+  if (mode === "generate_reel") {
+    return [
+      "Mode instructions:",
+      "- Select short, self-contained moments that can work as a product demo reel.",
+      "- Use action=clip_for_pitch for every kept reel clip.",
+      "- Keep the reel focused; ignore moments that need too much surrounding context.",
+    ].join("\n");
+  }
+
+  return [
+    "Mode instructions:",
+    "- Filter aggressively for high-confidence proof.",
+    "- Keep only direct, quote-backed or clearly visible evidence.",
+    "- Use action=save_as_proof for kept moments and action=ignore for anything uncertain.",
   ].join("\n");
 }
 
@@ -116,6 +155,8 @@ function parseGeminiAgentResponseValue(value: unknown): GeminiAgentResponse {
   }
 
   const candidate = value as Record<string, unknown>;
+  assertOnlyExpectedFields(candidate, ["summary", "decisions"], "Gemini response");
+
   const summary = parseRequiredString(candidate, "summary", "Gemini response");
   const decisions = parseDecisionArray(candidate.decisions);
 
@@ -138,12 +179,27 @@ function parseGeminiMomentDecision(value: unknown, index: number): GeminiMomentD
   }
 
   const candidate = value as Record<string, unknown>;
+  assertOnlyExpectedFields(candidate, ["id", "action", "rationale", "kept"], context);
+
   const id = parseRequiredString(candidate, "id", context);
   const action = parseRequiredAction(candidate.action, context);
   const rationale = parseRequiredString(candidate, "rationale", context);
   const kept = parseRequiredBoolean(candidate, "kept", context);
 
   return { id, action, rationale, kept };
+}
+
+function assertOnlyExpectedFields(
+  value: Record<string, unknown>,
+  expectedFields: string[],
+  context: string
+): void {
+  const expectedFieldSet = new Set(expectedFields);
+  const unexpectedField = Object.keys(value).find((fieldName) => !expectedFieldSet.has(fieldName));
+
+  if (unexpectedField) {
+    throw new Error(`${context} included unexpected field "${unexpectedField}"`);
+  }
 }
 
 function parseRequiredString(

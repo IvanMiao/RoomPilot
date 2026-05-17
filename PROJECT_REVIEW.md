@@ -116,6 +116,8 @@ Acceptance criteria:
 
 ### 4. Strengthen Gemini Output Validation
 
+Status: implemented.
+
 `lib/gemini.ts` currently checks only that the response has a string `summary` and an array `decisions`.
 
 It should validate every decision:
@@ -133,6 +135,8 @@ Acceptance criteria:
 - The app never sends malformed Gemini output directly to the UI.
 
 ### 5. Make `mode` Meaningful
+
+Status: implemented.
 
 The app currently supports these modes:
 

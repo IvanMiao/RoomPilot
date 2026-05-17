@@ -97,44 +97,91 @@ function buildRankingPrompt(goal: string, moments: EvidenceMoment[]): string {
 }
 
 function parseGeminiAgentResponse(text: string): GeminiAgentResponse {
-  const parsed: unknown = JSON.parse(text);
+  let parsed: unknown;
 
-  if (!isGeminiAgentResponse(parsed)) {
-    throw new Error("Gemini response did not match the expected agent shape");
+  try {
+    parsed = JSON.parse(text);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "unknown JSON parse error";
+
+    throw new Error(`Gemini response was not valid JSON: ${message}`);
   }
 
-  return parsed;
+  return parseGeminiAgentResponseValue(parsed);
 }
 
-function isGeminiAgentResponse(value: unknown): value is GeminiAgentResponse {
+function parseGeminiAgentResponseValue(value: unknown): GeminiAgentResponse {
   if (!value || typeof value !== "object") {
-    return false;
+    throw new Error("Gemini response must be a JSON object");
   }
 
-  const candidate = value as Partial<GeminiAgentResponse>;
+  const candidate = value as Record<string, unknown>;
+  const summary = parseRequiredString(candidate, "summary", "Gemini response");
+  const decisions = parseDecisionArray(candidate.decisions);
 
-  return (
-    typeof candidate.summary === "string" &&
-    Array.isArray(candidate.decisions) &&
-    candidate.decisions.every(isGeminiMomentDecision)
-  );
+  return { summary, decisions };
 }
 
-function isGeminiMomentDecision(value: unknown): value is GeminiMomentDecision {
+function parseDecisionArray(value: unknown): GeminiMomentDecision[] {
+  if (!Array.isArray(value)) {
+    throw new Error("Gemini response decisions must be an array");
+  }
+
+  return value.map(parseGeminiMomentDecision);
+}
+
+function parseGeminiMomentDecision(value: unknown, index: number): GeminiMomentDecision {
+  const context = `Gemini response decisions[${index}]`;
+
   if (!value || typeof value !== "object") {
-    return false;
+    throw new Error(`${context} must be an object`);
   }
 
-  const candidate = value as Partial<GeminiMomentDecision>;
+  const candidate = value as Record<string, unknown>;
+  const id = parseRequiredString(candidate, "id", context);
+  const action = parseRequiredAction(candidate.action, context);
+  const rationale = parseRequiredString(candidate, "rationale", context);
+  const kept = parseRequiredBoolean(candidate, "kept", context);
 
-  return (
-    typeof candidate.id === "string" &&
-    isAgentAction(candidate.action) &&
-    typeof candidate.rationale === "string" &&
-    typeof candidate.kept === "boolean"
-  );
+  return { id, action, rationale, kept };
 }
 
-function isAgentAction(value: unknown): value is RankedMoment["action"] {
-  return typeof value === "string" && agentActions.has(value as AgentAction);
+function parseRequiredString(
+  value: Record<string, unknown>,
+  fieldName: string,
+  context: string
+): string {
+  const fieldValue = value[fieldName];
+
+  if (typeof fieldValue !== "string") {
+    throw new Error(`${context} field "${fieldName}" must be a string`);
+  }
+
+  return fieldValue;
+}
+
+function parseRequiredBoolean(
+  value: Record<string, unknown>,
+  fieldName: string,
+  context: string
+): boolean {
+  const fieldValue = value[fieldName];
+
+  if (typeof fieldValue !== "boolean") {
+    throw new Error(`${context} field "${fieldName}" must be a boolean`);
+  }
+
+  return fieldValue;
+}
+
+function parseRequiredAction(value: unknown, context: string): RankedMoment["action"] {
+  if (typeof value !== "string") {
+    throw new Error(`${context} field "action" must be a string`);
+  }
+
+  if (!agentActions.has(value as AgentAction)) {
+    throw new Error(`${context} field "action" has unknown value "${value}"`);
+  }
+
+  return value as RankedMoment["action"];
 }

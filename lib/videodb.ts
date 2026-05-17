@@ -1,9 +1,20 @@
-import { connect, Video } from "videodb";
+import { connect, InvalidRequestError, Video } from "videodb";
 import { getOptionalEnv } from "@/lib/env";
 import type { AgentTaskRequest, EvidenceMoment, MomentSource } from "@/types/agent";
+import type { Collection } from "videodb";
 
 const defaultMomentLimit = 6;
 const roomPilotVisualIndexName = "roompilot-visual-evidence";
+
+type VideoSearchShot = {
+  videoId: string;
+  videoTitle: string;
+  start: number;
+  end: number;
+  text?: string;
+  searchScore?: number;
+  streamUrl?: string;
+};
 
 export async function retrieveEvidenceMoments(
   request: AgentTaskRequest
@@ -19,18 +30,20 @@ export async function retrieveEvidenceMoments(
   const momentGroups: EvidenceMoment[][] = [];
 
   if (includeAudioEvidence) {
-    await video.indexSpokenWords();
-    const audioResults = await video.search(request.goal, "semantic", "spoken_word", maxMoments);
+    await ensureSpokenWordIndex(video);
+    const audioShots = await searchVideoShots(video, request.goal, "spoken_word", maxMoments);
 
-    momentGroups.push(toEvidenceMoments(audioResults.shots, video.streamUrl, "audio"));
+    momentGroups.push(toEvidenceMoments(audioShots, video.streamUrl, "audio"));
   }
 
   if (includeVisualEvidence) {
-    await ensureVisualIndex(video);
+    const visualIndexReady = await ensureVisualIndexReady(video);
 
-    const visualResults = await video.search(request.goal, "semantic", "scene", maxMoments);
+    if (visualIndexReady) {
+      const visualShots = await searchVideoShots(video, request.goal, "scene", maxMoments);
 
-    momentGroups.push(toEvidenceMoments(visualResults.shots, video.streamUrl, "visual"));
+      momentGroups.push(toEvidenceMoments(visualShots, video.streamUrl, "visual"));
+    }
   }
 
   return mergeEvidenceMoments(momentGroups.flat(), maxMoments);
@@ -46,10 +59,8 @@ async function getVideo(request: AgentTaskRequest): Promise<Video> {
     return collection.getVideo(request.input.value);
   }
 
-  const asset = await collection.uploadURL({
-    url: request.input.value,
-    name: "RoomPilot demo source",
-  });
+  const sourceUrl = normalizeVideoSourceUrl(request.input.value);
+  const asset = await uploadVideoUrl(collection, sourceUrl);
 
   if (!(asset instanceof Video)) {
     throw new Error("VideoDB did not return a video asset for this input");
@@ -58,14 +69,122 @@ async function getVideo(request: AgentTaskRequest): Promise<Video> {
   return asset;
 }
 
-async function ensureVisualIndex(video: Video): Promise<void> {
+async function uploadVideoUrl(collection: Collection, sourceUrl: string) {
+  try {
+    return await collection.uploadURL({
+      url: sourceUrl,
+      name: "RoomPilot demo source",
+      mediaType: "video",
+    });
+  } catch (error) {
+    throw getVideoUploadError(error);
+  }
+}
+
+function normalizeVideoSourceUrl(value: string): string {
+  let parsedUrl: URL;
+
+  try {
+    parsedUrl = new URL(value);
+  } catch {
+    throw new Error("Enter a valid video URL that starts with http:// or https://.");
+  }
+
+  if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+    throw new Error("Enter a valid video URL that starts with http:// or https://.");
+  }
+
+  const youtubeVideoId = getYoutubeVideoId(parsedUrl);
+
+  if (!youtubeVideoId) {
+    return parsedUrl.toString();
+  }
+
+  return `https://www.youtube.com/watch?v=${youtubeVideoId}`;
+}
+
+function getYoutubeVideoId(parsedUrl: URL): string | null {
+  const host = parsedUrl.hostname.toLowerCase().replace(/^www\./, "");
+
+  if (host === "youtu.be") {
+    return getFirstPathSegment(parsedUrl);
+  }
+
+  if (host !== "youtube.com" && host !== "m.youtube.com" && host !== "music.youtube.com") {
+    return null;
+  }
+
+  if (parsedUrl.pathname === "/watch") {
+    return parsedUrl.searchParams.get("v");
+  }
+
+  if (parsedUrl.pathname.startsWith("/shorts/")) {
+    return getPathSegment(parsedUrl, 1);
+  }
+
+  if (parsedUrl.pathname.startsWith("/embed/")) {
+    return getPathSegment(parsedUrl, 1);
+  }
+
+  if (parsedUrl.pathname.startsWith("/live/")) {
+    return getPathSegment(parsedUrl, 1);
+  }
+
+  return null;
+}
+
+function getFirstPathSegment(parsedUrl: URL): string | null {
+  return getPathSegment(parsedUrl, 0);
+}
+
+function getPathSegment(parsedUrl: URL, index: number): string | null {
+  const segment = parsedUrl.pathname.split("/").filter(Boolean)[index];
+
+  return segment || null;
+}
+
+function getVideoUploadError(error: unknown): Error {
+  const message = error instanceof Error ? error.message : "";
+
+  if (message.includes("Download failed")) {
+    return new Error(
+      "VideoDB could not download that video URL. Use a public YouTube video or a direct video file URL such as an MP4 or S3 object. Private, age-restricted, members-only, live, region-restricted, or blocked YouTube videos can fail during VideoDB ingest."
+    );
+  }
+
+  return error instanceof Error ? error : new Error("VideoDB upload failed");
+}
+
+async function ensureSpokenWordIndex(video: Video): Promise<void> {
+  try {
+    await video.indexSpokenWords();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "";
+
+    if (message.includes("Spoken word index for video already exists")) {
+      return;
+    }
+
+    throw error;
+  }
+}
+
+async function ensureVisualIndexReady(video: Video): Promise<boolean> {
   const existingIndexes = await video.listSceneIndex();
   const completedIndex = existingIndexes.find(
     (index) => index.name === roomPilotVisualIndexName && index.status === "done"
   );
 
   if (completedIndex) {
-    return;
+    return true;
+  }
+
+  const existingRoomPilotIndex = existingIndexes.find(
+    (index) => index.name === roomPilotVisualIndexName
+  );
+
+  if (existingRoomPilotIndex) {
+    return false;
   }
 
   await video.indexVisuals({
@@ -79,18 +198,39 @@ async function ensureVisualIndex(video: Video): Promise<void> {
     },
     name: roomPilotVisualIndexName,
   });
+
+  return false;
+}
+
+async function searchVideoShots(
+  video: Video,
+  query: string,
+  indexType: "spoken_word" | "scene",
+  maxMoments: number
+): Promise<VideoSearchShot[]> {
+  try {
+    const results = await video.search(query, "semantic", indexType, maxMoments);
+
+    return results.shots;
+  } catch (error) {
+    if (isNoSearchResultsError(error)) {
+      return [];
+    }
+
+    throw error;
+  }
+}
+
+function isNoSearchResultsError(error: unknown): boolean {
+  if (!(error instanceof InvalidRequestError) && !(error instanceof Error)) {
+    return false;
+  }
+
+  return error.message.includes("No results found");
 }
 
 function toEvidenceMoments(
-  shots: Array<{
-    videoId: string;
-    videoTitle: string;
-    start: number;
-    end: number;
-    text?: string;
-    searchScore?: number;
-    streamUrl?: string;
-  }>,
+  shots: VideoSearchShot[],
   fallbackStreamUrl: string,
   source: MomentSource
 ): EvidenceMoment[] {

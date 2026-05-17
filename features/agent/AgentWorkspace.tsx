@@ -5,11 +5,11 @@ import { useState } from "react";
 import { runAgentTask } from "@/features/agent/agentApi";
 import type { AgentMode, AgentTaskResult, RankedMoment } from "@/types/agent";
 
-const initialAssetUrl = "https://example.com/roompilot-demo.mp4";
+const demoVideoId = "m-z-019e3728-0d5b-78f2-a831-1c29e778cc59";
 const initialGoal = "Find the strongest proof moments for a 60-second product demo.";
 
 export function AgentWorkspace() {
-  const [assetUrl, setAssetUrl] = useState(initialAssetUrl);
+  const [videoId, setVideoId] = useState(demoVideoId);
   const [goal, setGoal] = useState(initialGoal);
   const [mode, setMode] = useState<AgentMode>("find_strongest_proof");
   const [result, setResult] = useState<AgentTaskResult | null>(null);
@@ -23,8 +23,8 @@ export function AgentWorkspace() {
     try {
       const nextResult = await runAgentTask({
         input: {
-          type: "video_url",
-          value: assetUrl,
+          type: "video_asset",
+          value: videoId,
         },
         goal,
         mode,
@@ -62,12 +62,12 @@ export function AgentWorkspace() {
 
         <section className="grid gap-5 lg:grid-cols-[360px_1fr]">
           <AgentControlPanel
-            assetUrl={assetUrl}
             goal={goal}
             mode={mode}
-            setAssetUrl={setAssetUrl}
             setGoal={setGoal}
             setMode={setMode}
+            setVideoId={setVideoId}
+            videoId={videoId}
           />
 
           <div className="grid gap-5">
@@ -81,12 +81,12 @@ export function AgentWorkspace() {
 }
 
 interface AgentControlPanelProps {
-  assetUrl: string;
   goal: string;
   mode: AgentMode;
-  setAssetUrl: (value: string) => void;
   setGoal: (value: string) => void;
   setMode: (value: AgentMode) => void;
+  setVideoId: (value: string) => void;
+  videoId: string;
 }
 
 function AgentControlPanel(props: AgentControlPanelProps) {
@@ -97,14 +97,14 @@ function AgentControlPanel(props: AgentControlPanelProps) {
         Agent Task
       </div>
 
-      <label className="mt-5 block text-sm font-medium text-ink" htmlFor="asset-url">
-        Video URL
+      <label className="mt-5 block text-sm font-medium text-ink" htmlFor="video-id">
+        VideoDB video ID
       </label>
       <input
         className="mt-2 h-11 w-full rounded-md border border-line bg-white px-3 text-sm outline-none focus:border-steel"
-        id="asset-url"
-        onChange={(event) => props.setAssetUrl(event.target.value)}
-        value={props.assetUrl}
+        id="video-id"
+        onChange={(event) => props.setVideoId(event.target.value)}
+        value={props.videoId}
       />
 
       <label className="mt-5 block text-sm font-medium text-ink" htmlFor="agent-goal">
@@ -143,7 +143,8 @@ function ResultPanel({ result }: { result: AgentTaskResult | null }) {
           <Play className="mx-auto size-9 text-steel" />
           <h2 className="mt-4 text-2xl font-semibold text-ink">No agent run yet</h2>
           <p className="mt-2 text-sm leading-6 text-ink/65">
-            Add a demo video URL, define the goal, and run the agent to produce ranked evidence.
+            Use the demo video from your VideoDB collection, define the goal, and run the agent to
+            produce ranked evidence.
           </p>
         </div>
       </section>
